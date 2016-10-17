@@ -1,0 +1,355 @@
+---
+title: "Practical Machine Learning Project"
+author: "Piotr Kalanski"
+date: "17 October 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(lattice)
+library(rpart)
+library(MASS)
+#library(randomForest)
+library(caret)
+```
+
+# Summary
+
+From tested algorithms, the best accuracy is achieved using Random Forests. The more variables are included the better accuracy. On other hand including more than 20 variable have very low impact on accuracy and highly increased computation resources, so depending on required accuracy it might be not worth adding a lot of predictors for training model. For example including only 5 top variables enables achieving 0.97 accuracy, including 10 variables 0.98, including 15 variables 0.988, 20 variables 0.991, 50 variables 0.993. Low increase in accuracy is mostly related to high correlation between selected variables Appendix [Correlated predictors](##Correlated predictors).
+
+Stacked model based on random forests, boosting, lda has similar accuracy to Random Forests.
+
+Using principal components for training random forests doesn't increase accuracy.
+
+Please note that many of R code is commented in this report, because it is taking more than 10 minutes to train one random forest or boosting model and training again all of verified models will take too much time. Additionally with boosting sometimes there are out of memory problems, because my laptop has only 8GB RAM.
+
+# Test and training data
+
+```{r, echo=FALSE}
+setwd("C:/Users/Piotrek/Dropbox/Dokumenty/Data Science/Data Science Specialization/Practical Machine Learning/Week4/Project")
+```
+
+```{r}
+training = read.csv("pml-training.csv")
+testing = read.csv("pml-testing.csv")
+```
+
+```{r}
+set.seed(3523)
+inTrain = createDataPartition(training$classe, p = 3/4)[[1]]
+training_training = training[ inTrain,]
+training_testing = training[-inTrain,]
+```
+
+# Model selection
+
+## Feature selection
+
+### Remove not appropriate features
+
+Below features shouldn't be taken into account when training model, because they are related to specific person and time of training that shouldn't be taken into account:
+user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window
+
+### Empty features
+
+List of empty features is at appendix [Empty features](###Empty features)
+
+### Remaining not empty features
+
+```{r}
+not_empty_columns = c("roll_belt","pitch_belt","yaw_belt","total_accel_belt","gyros_belt_x","gyros_belt_y","gyros_belt_z","accel_belt_x","accel_belt_y","accel_belt_z","magnet_belt_x","magnet_belt_y","magnet_belt_z","roll_arm","pitch_arm","yaw_arm","total_accel_arm","gyros_arm_x","gyros_arm_y","gyros_arm_z","accel_arm_x","accel_arm_y","accel_arm_z","magnet_arm_x","magnet_arm_y","magnet_arm_z","roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell","gyros_dumbbell_x","gyros_dumbbell_y","gyros_dumbbell_z","accel_dumbbell_x","accel_dumbbell_y","accel_dumbbell_z","magnet_dumbbell_x","magnet_dumbbell_y","magnet_dumbbell_z","roll_forearm","pitch_forearm","yaw_forearm","total_accel_forearm","gyros_forearm_x","gyros_forearm_y","gyros_forearm_z","accel_forearm_x","accel_forearm_y","accel_forearm_z","magnet_forearm_x","magnet_forearm_y","magnet_forearm_z")
+```
+
+```{r}
+training_not_empty = training_training[,not_empty_columns]
+testing_not_empty = training_testing[,not_empty_columns]
+```
+
+### Training random forests to select variable importance
+
+This step is taking quite a lot of time (more than one hour) that's why it is commented while generating report.
+
+```{r}
+#model_rf_all = train(classe ~ ., data=training_not_empty, method="rf")
+```
+
+Accuracy of this model for testing set is 0.9933 and can be verified using below code:
+
+```{r}
+#confusionMatrix(training_testing$classe, predict(model_rf_all, newdata=training_testing))
+```
+
+```{r}
+#varImp(model_rf_all)
+```
+
+Variable importance for top 20 features:
+
+- roll_belt          100.00
+- yaw_belt            77.36
+- magnet_dumbbell_z   65.93
+- pitch_forearm       61.79
+- magnet_dumbbell_y   61.03
+- pitch_belt          57.91
+- magnet_dumbbell_x   50.03
+- roll_forearm        47.43
+- accel_belt_z        43.99
+- accel_dumbbell_y    42.27
+- magnet_belt_y       41.08
+- roll_dumbbell       39.83
+- magnet_belt_z       38.75
+- roll_arm            36.09
+- accel_dumbbell_z    35.91
+- accel_forearm_x     32.05
+- yaw_dumbbell        30.10
+- gyros_belt_z        28.53
+- accel_dumbbell_x    27.58
+- accel_arm_x         27.53
+
+# Algorithm
+
+In this section below algorithms are compared:
+
+- Decision Tree
+- Linear Disciminant Analysis
+- Boosting
+- Random Forest
+
+## Decision tree (rpart)
+
+### Top 10 important variables based on random forest
+
+Accuracy is pretty low - about 0.5:
+
+```{r}
+model_rpart_top10 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y, data=training_training, method="rpart")
+
+confusionMatrix(training_testing$classe, predict(model_rpart_top10, newdata=training_testing))$overall["Accuracy"]
+```
+
+### Top 20 important variables based on random forest
+
+Accuracy is pretty low - about 0.5:
+
+```{r}
+model_rpart_top20 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y+magnet_belt_y+roll_dumbbell+magnet_belt_z+roll_arm+accel_dumbbell_z+accel_forearm_x+yaw_dumbbell+gyros_belt_z+accel_dumbbell_x+accel_arm_x, data=training_training, method="rpart")
+
+confusionMatrix(training_testing$classe, predict(model_rpart_top20, newdata=training_testing))$overall["Accuracy"]
+```
+
+## Linear Disciminant Analysis (lda)
+
+### Top 10 important variables based on random forest
+
+Accuracy is pretty low - about 0.5:
+
+```{r}
+model_lda_top10 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y, data=training_training, method="lda")
+
+confusionMatrix(training_testing$classe, predict(model_lda_top10, newdata=training_testing))$overall["Accuracy"]
+```
+
+### Top 20 important variables based on random forest
+
+Accuracy is pretty low - about 0.6:
+
+```{r}
+model_lda_top20 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y+magnet_belt_y+roll_dumbbell+magnet_belt_z+roll_arm+accel_dumbbell_z+accel_forearm_x+yaw_dumbbell+gyros_belt_z+accel_dumbbell_x+accel_arm_x, data=training_training, method="lda")
+
+confusionMatrix(training_testing$classe, predict(model_lda_top20, newdata=training_testing))$overall["Accuracy"]
+```
+
+## Boosting (gbm)
+
+### Top 10 important variables based on random forest
+
+Accuracy is high - about 0.94:
+
+```{r}
+#model_gbm_top10 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y, data=training_training, method="gbm")
+
+#confusionMatrix(training_testing$classe, predict(model_gbm_top10, newdata=training_testing))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+### Top 20 important variables based on random forest
+
+Accuracy is high - about 0.98:
+```{r}
+#model_gbm_top20 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y+magnet_belt_y+roll_dumbbell+magnet_belt_z+roll_arm+accel_dumbbell_z+accel_forearm_x+yaw_dumbbell+gyros_belt_z+accel_dumbbell_x+accel_arm_x, data=training_training, method="gbm")
+
+#confusionMatrix(training_testing$classe, predict(model_gbm_top20, newdata=training_testing))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+## Random forest (rf)
+
+### Top 5 important variables based on random forest
+
+Accuracy is high - about 0.97:
+
+```{r}
+# model_rf_top5 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y, data=training_training, method="rf")
+# 
+# confusionMatrix(training_testing$classe, predict(model_rf_top5, newdata=training_testing))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+### Top 10 important variables based on random forest
+
+Accuracy is high - about 0.98:
+
+```{r}
+#model_rf_top10 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y, data=training_training, method="rf")
+
+#confusionMatrix(training_testing$classe, predict(model_rf_top10, newdata=training_testing))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+### Top 15 important variables based on random forest
+
+Accuracy is high - about 0.988:
+
+```{r}
+#model_rf_top15 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y+magnet_belt_y+roll_dumbbell+magnet_belt_z+roll_arm+accel_dumbbell_z, data=training_training, method="rf")
+
+#confusionMatrix(training_testing$classe, predict(model_rf_top15, newdata=training_testing))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+### Top 20 important variables based on random forest
+
+Accuracy is high - about 0.991:
+
+```{r}
+#model_rf_top20 = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y+magnet_belt_y+roll_dumbbell+magnet_belt_z+roll_arm+accel_dumbbell_z+accel_forearm_x+yaw_dumbbell+gyros_belt_z+accel_dumbbell_x+accel_arm_x, data=training_training, method="rf")
+
+#confusionMatrix(training_testing$classe, predict(model_rf_top20, newdata=training_testing))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+### Random Forest with PCA
+
+Accuracy of Random Forest based on N first principal variables is following:
+
+- 10 principal components - about 0.9566
+- 15 principal components - about 0.9672
+- 20 principal components - about 0.9753
+- 25 principal components - about 0.9747
+
+R code for training is available at attachment [Training Random Forest with PCA](##Training Random Forest with PCA)
+
+## Model stacking (rf+gbm+lda)
+
+Accuracy of stacked model is about 0.9916, so it is similar to Random Forest.
+
+R code for training is available at attachment [Training stacked model](##Training stacked model)
+
+# Cross validation
+
+Random Forest model accuracy for top 10 variables using cross validation is 0.9872 and can be verified using below code.
+
+```{r}
+#train_control = trainControl(method="cv", number = 10, savePredictions = TRUE)
+
+#model = train(classe~roll_belt+yaw_belt+magnet_dumbbell_z+pitch_forearm+magnet_dumbbell_y+pitch_belt+magnet_dumbbell_x+roll_forearm+accel_belt_z+accel_dumbbell_y, data=training_training, trControl=train_control, method="rf")
+
+#confusionMatrix(training_testing$classe, predict(model, newdata=training_testing))
+```
+
+# Appendixes
+
+## Exploratory Data Analysis
+
+### Data structure
+
+```{r}
+str(training)
+```
+
+### Variables summary
+
+```{r}
+summary(training_training)
+```
+
+### Empty features
+
+Based on result from summary function, below features are for most of samples empty so shouldn't be taken into account:
+kurtosis_roll_belt, kurtosis_picth_belt, kurtosis_yaw_belt, skewness_roll_belt, skewness_roll_belt.1, skewness_yaw_belt, max_roll_belt, max_picth_belt, max_yaw_belt, min_roll_belt, min_pitch_belt, min_yaw_belt, amplitude_roll_belt, amplitude_pitch_belt, amplitude_yaw_belt, var_total_accel_belt, avg_roll_belt, stddev_roll_belt, var_roll_belt, avg_pitch_belt, stddev_pitch_belt, var_pitch_belt, avg_yaw_belt, stddev_yaw_belt, var_yaw_belt, var_accel_arm,     avg_roll_arm, stddev_roll_arm, var_roll_arm, avg_pitch_arm, stddev_pitch_arm, var_pitch_arm, avg_yaw_arm, stddev_yaw_arm, var_yaw_arm, kurtosis_roll_arm, kurtosis_picth_arm, kurtosis_yaw_arm, skewness_roll_arm, skewness_pitch_arm, skewness_yaw_arm, max_roll_arm, max_picth_arm, max_yaw_arm, min_roll_arm,    min_pitch_arm, min_yaw_arm, amplitude_roll_arm, amplitude_pitch_arm, amplitude_yaw_arm, kurtosis_roll_dumbbell, kurtosis_picth_dumbbell, kurtosis_yaw_dumbbell, skewness_roll_dumbbell, skewness_pitch_dumbbell, skewness_yaw_dumbbell, max_roll_dumbbell, max_picth_dumbbell, max_yaw_dumbbell, min_roll_dumbbell, min_pitch_dumbbell, min_yaw_dumbbell, amplitude_roll_dumbbell, amplitude_pitch_dumbbell, amplitude_yaw_dumbbell, var_accel_dumbbell, avg_roll_dumbbell, stddev_roll_dumbbell, var_roll_dumbbell, avg_pitch_dumbbell, stddev_pitch_dumbbell, var_pitch_dumbbell, avg_yaw_dumbbell, stddev_yaw_dumbbell, var_yaw_dumbbell, kurtosis_roll_forearm, kurtosis_picth_forearm, kurtosis_yaw_forearm, skewness_roll_forearm, skewness_pitch_forearm, skewness_yaw_forearm, max_roll_forearm, max_picth_forearm, max_yaw_forearm, min_roll_forearm, min_pitch_forearm, min_yaw_forearm, amplitude_roll_forearm, amplitude_pitch_forearm, amplitude_yaw_forearm, var_accel_forearm, avg_roll_forearm,   stddev_roll_forearm, var_roll_forearm,   avg_pitch_forearm, stddev_pitch_forearm, var_pitch_forearm,  avg_yaw_forearm,   stddev_yaw_forearm, var_yaw_forearm
+
+### Correlated predictors
+
+```{r}
+M = abs(cor(training_not_empty))
+diag(M) = 0
+high_cov = which(M > 0.8,arr.ind=T)
+cbind(high_cov, names(training_not_empty)[high_cov[,2]])
+```
+
+### PCA
+
+```{r}
+prComp = prcomp(training_not_empty)
+prCompRotation = prComp$rotation
+rownames(prCompRotation)[order(-apply(abs(prCompRotation[, 1:10]), 1, sum))][1:20]
+```
+
+## Training Random Forest with PCA
+
+```{r}
+# preProcPC10 = preProcess(training_not_empty, method="pca", pcaComp=10)
+# trainPC10 = predict(preProcPC10, training_not_empty)
+# trainPC10$classe = training_training$classe
+# model_rf_pc10 = train(classe ~ ., method="rf", data=trainPC10)
+# testPC10 = predict(preProcPC10, testing_not_empty)
+# confusionMatrix(training_testing$classe, predict(model_rf_pc10,testPC10))
+# 
+# preProcPC15 = preProcess(training_not_empty, method="pca", pcaComp=15)
+# trainPC15 = predict(preProcPC15, training_not_empty)
+# trainPC15$classe = training_training$classe
+# model_rf_pc15 = train(classe ~ ., method="rf", data=trainPC15)
+# testPC15 = predict(preProcPC15, testing_not_empty)
+# confusionMatrix(training_testing$classe, predict(model_rf_pc15,testPC15))
+# 
+# preProcPC20 = preProcess(training_not_empty, method="pca", pcaComp=20)
+# trainPC20 = predict(preProcPC20, training_not_empty)
+# trainPC20$classe = training_training$classe
+# model_rf_pc20 = train(classe ~ ., method="rf", data=trainPC20)
+# testPC20 = predict(preProcPC20, testing_not_empty)
+# confusionMatrix(training_testing$classe, predict(model_rf_pc20,testPC20))
+# 
+# preProcPC25 = preProcess(training_not_empty, method="pca", pcaComp=25)
+# trainPC25 = predict(preProcPC20, training_not_empty)
+# trainPC25$classe = training_training$classe
+# model_rf_pc25 = train(classe ~ ., method="rf", data=trainPC25)
+# testPC25 = predict(preProcPC25, testing_not_empty)
+# confusionMatrix(training_testing$classe, predict(model_rf_pc25,testPC25))
+```
+
+This code is commented, because it's running quite a lot of time.
+
+## Training stacked model
+
+```{r}
+#pred_rf <- predict(model_rf_top10, newdata=training_testing)
+#pred_gbm <- predict(model_gbm_top10, newdata=training_testing)
+#pred_lda <- predict(model_lda_top10, newdata=training_testing)
+#predDF <- data.frame(pred_rf, pred_gbm, pred_lda, classe=training_testing$classe)
+#model_combo <- train(classe ~ ., method="rf", data=predDF)
+#pred_combo <- predict(model_combo, newdata=training_testing)
+#confusionMatrix(training_testing$classe, pred_combo)
+```
+
+This code is commented, because it's running quite a lot of time.
